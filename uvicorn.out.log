@@ -1,0 +1,27 @@
+INFO:     127.0.0.1:63887 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63888 - "GET /api/v1/assets?page=1&size=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63894 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63936 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63937 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63936 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63936 - "GET /api/v1/assets?page=1&size=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63941 - "GET /api/v1/security/uncovered HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63942 - "GET /api/v1/audit/changes?page=1&size=8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63937 - "GET /api/v1/security/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63937 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64298 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64298 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64299 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64301 - "GET /api/v1/security/uncovered HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64299 - "GET /api/v1/assets?page=1&size=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64298 - "GET /api/v1/security/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64300 - "GET /api/v1/audit/changes?page=1&size=8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64305 - "GET / HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:64642 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64642 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64643 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64643 - "GET /api/v1/assets?page=1&size=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64642 - "GET /api/v1/security/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64646 - "GET /api/v1/security/uncovered HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64647 - "GET /api/v1/audit/changes?page=1&size=8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64647 - "GET /favicon.ico HTTP/1.1" 404 Not Found

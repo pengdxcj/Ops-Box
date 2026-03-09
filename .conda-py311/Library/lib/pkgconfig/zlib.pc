@@ -1,0 +1,13 @@
+prefix=E:/Code/CMDB/.conda-py311/Library
+exec_prefix=E:/Code/CMDB/.conda-py311/Library
+libdir=E:/Code/CMDB/.conda-py311/Library/lib
+sharedlibdir=E:/Code/CMDB/.conda-py311/Library/lib
+includedir=E:/Code/CMDB/.conda-py311/Library/include
+
+Name: zlib
+Description: zlib compression library
+Version: 1.3.1
+
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -lz
+Cflags: -I${includedir}

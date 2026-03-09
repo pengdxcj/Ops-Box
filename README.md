@@ -19,6 +19,8 @@ A runnable CMDB backend prototype for ops teams, covering cloud servers, databas
    ```
 4. Open API docs:
    - `http://127.0.0.1:8000/docs`
+5. Open frontend console:
+   - `http://127.0.0.1:8000/`
 
 ## 2. Demo Data
 After service starts once (tables auto-created), seed sample assets:
@@ -77,4 +79,3 @@ CMDB_DATABASE_URL=mysql+pymysql://user:password@127.0.0.1:3306/cmdb?charset=utf8
 
 ## 6. Design Doc
 - [docs/CMDB_Design.md](docs/CMDB_Design.md)
-

@@ -1,7 +1,10 @@
 import json
+from pathlib import Path
 from typing import Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -29,11 +32,18 @@ from app.schemas import (
 )
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+
+
+@app.get("/", include_in_schema=False)
+def frontend_index():
+    return FileResponse(frontend_dir / "index.html")
 
 
 def _snapshot_asset(asset: Asset) -> dict:
@@ -398,4 +408,3 @@ def list_changes(
         items=[ChangeLogOut.model_validate(log).model_dump() for log in logs],
     )
     return ApiResponse(data=data.model_dump())
-

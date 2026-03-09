@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CMDB &#36164;&#20135;&#25511;&#21046;&#21488;</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+
+    <main class="layout">
+      <header class="hero card">
+        <div>
+          <p class="eyebrow">&#36164;&#20135;&#36816;&#32500;&#25511;&#21046;&#21488;</p>
+          <h1>CMDB &#36164;&#20135;&#25511;&#21046;&#21488;</h1>
+          <p class="subtitle">
+            &#21518;&#31471;&#37319;&#29992; Python&#12290;&#24403;&#21069;&#39029;&#38754;&#25552;&#20379;&#36164;&#20135;&#24635;&#35272;&#12289;&#23433;&#20840;&#35206;&#30422;&#29575;&#19982;&#21464;&#26356;&#23457;&#35745;&#30340;&#23454;&#26102;&#31649;&#29702;&#33021;&#21147;&#12290;
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="refreshAllBtn" class="btn">&#21047;&#26032;&#25968;&#25454;</button>
+          <button id="syncBtn" class="btn btn-ghost">&#36164;&#20135;&#21516;&#27493;</button>
+        </div>
+      </header>
+
+      <section class="metrics" id="metrics"></section>
+
+      <section class="grid-two">
+        <article class="card panel">
+          <div class="panel-head">
+            <h2>&#36164;&#20135;&#21015;&#34920;</h2>
+            <p id="assetCountText">&#21152;&#36733;&#20013;...</p>
+          </div>
+
+          <div class="filters">
+            <label>
+              &#31867;&#22411;
+              <select id="filterType">
+                <option value="">&#20840;&#37096;</option>
+                <option value="CLOUD_SERVER">CLOUD_SERVER</option>
+                <option value="DB">DB</option>
+                <option value="MIDDLEWARE">MIDDLEWARE</option>
+                <option value="SECURITY_PRODUCT">SECURITY_PRODUCT</option>
+              </select>
+            </label>
+            <label>
+              &#29615;&#22659;
+              <select id="filterEnv">
+                <option value="">&#20840;&#37096;</option>
+                <option value="prod">prod</option>
+                <option value="staging">staging</option>
+                <option value="test">test</option>
+                <option value="dev">dev</option>
+              </select>
+            </label>
+            <label>
+              &#29366;&#24577;
+              <select id="filterStatus">
+                <option value="">&#20840;&#37096;</option>
+                <option value="IN_USE">IN_USE</option>
+                <option value="IDLE">IDLE</option>
+                <option value="DECOMMISSIONED">DECOMMISSIONED</option>
+              </select>
+            </label>
+            <label>
+              &#36127;&#36131;&#20154;
+              <input id="filterOwner" placeholder="ops_team" />
+            </label>
+            <button id="filterBtn" class="btn">&#26597;&#35810;</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>&#32534;&#30721;</th>
+                  <th>&#21517;&#31216;</th>
+                  <th>&#31867;&#22411;</th>
+                  <th>&#29615;&#22659;</th>
+                  <th>&#29366;&#24577;</th>
+                  <th>&#36127;&#36131;&#20154;</th>
+                </tr>
+              </thead>
+              <tbody id="assetTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card panel">
+          <div class="panel-head">
+            <h2>&#26032;&#22686;&#36164;&#20135;</h2>
+            <p>&#32479;&#19968;&#34920;&#21333;&#35206;&#30422;&#22235;&#31867;&#26680;&#24515;&#36164;&#20135;</p>
+          </div>
+
+          <form id="createAssetForm" class="form-grid">
+            <label>
+              &#36164;&#20135;&#32534;&#30721;
+              <input name="asset_code" required placeholder="ecs-prod-012" />
+            </label>
+            <label>
+              &#36164;&#20135;&#31867;&#22411;
+              <select name="asset_type" id="assetType" required>
+                <option value="CLOUD_SERVER">CLOUD_SERVER</option>
+                <option value="DB">DB</option>
+                <option value="MIDDLEWARE">MIDDLEWARE</option>
+                <option value="SECURITY_PRODUCT">SECURITY_PRODUCT</option>
+              </select>
+            </label>
+            <label>
+              &#36164;&#20135;&#21517;&#31216;
+              <input name="name" required placeholder="prod-app-ecs-012" />
+            </label>
+            <label>
+              &#36127;&#36131;&#20154;
+              <input name="owner" required placeholder="ops_team" />
+            </label>
+            <label>
+              &#32452;&#32455;
+              <input name="org" required placeholder="platform" />
+            </label>
+            <label>
+              &#21306;&#22495;
+              <input name="region" value="cn-east-1" />
+            </label>
+            <label>
+              &#29615;&#22659;
+              <select name="env">
+                <option value="prod">prod</option>
+                <option value="staging">staging</option>
+                <option value="test">test</option>
+                <option value="dev">dev</option>
+              </select>
+            </label>
+            <label>
+              &#29366;&#24577;
+              <select name="status">
+                <option value="IN_USE">IN_USE</option>
+                <option value="IDLE">IDLE</option>
+                <option value="DECOMMISSIONED">DECOMMISSIONED</option>
+              </select>
+            </label>
+            <label class="full">
+              &#26631;&#31614;&#65288;&#27599;&#34892;&#19968;&#26465;&#65292;&#26684;&#24335; key=value&#65289;
+              <textarea name="tags" rows="3" placeholder="service=order&#10;tier=app"></textarea>
+            </label>
+
+            <div id="extensionFields" class="full extension-grid"></div>
+
+            <div class="full">
+              <button type="submit" class="btn">&#21019;&#24314;&#36164;&#20135;</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="grid-two">
+        <article class="card panel">
+          <div class="panel-head">
+            <h2>&#23433;&#20840;&#35206;&#30422;&#29575;</h2>
+            <p id="coverageSummary">&#21152;&#36733;&#20013;...</p>
+          </div>
+          <div id="coverageTypeList" class="stack"></div>
+        </article>
+
+        <article class="card panel">
+          <div class="panel-head">
+            <h2>&#26368;&#36817;&#21464;&#26356;</h2>
+            <p>&#26368;&#26032;&#36164;&#20135;&#21464;&#26356;&#26085;&#24535;</p>
+          </div>
+          <div id="changeLogList" class="stack"></div>
+        </article>
+      </section>
+
+      <section class="card panel">
+        <div class="panel-head">
+          <h2>&#26410;&#35206;&#30422;&#36164;&#20135;</h2>
+          <p id="uncoveredCountText">&#21152;&#36733;&#20013;...</p>
+        </div>
+        <div id="uncoveredList" class="chip-list"></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

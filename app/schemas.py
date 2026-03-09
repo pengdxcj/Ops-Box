@@ -5,11 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AssetTagBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     tag_key: str
     tag_value: str
 
 
 class AssetCloudServerBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     instance_id: str
     vpc_id: str
     cpu: int
@@ -21,6 +25,8 @@ class AssetCloudServerBase(BaseModel):
 
 
 class AssetDatabaseBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     db_type: str
     version: str
     endpoint: str
@@ -31,6 +37,8 @@ class AssetDatabaseBase(BaseModel):
 
 
 class AssetMiddlewareBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     mw_type: str
     cluster_name: str
     version: str
@@ -39,6 +47,8 @@ class AssetMiddlewareBase(BaseModel):
 
 
 class AssetSecurityProductBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     product_type: str
     vendor: str
     version: str
@@ -139,4 +149,3 @@ class ApiResponse(BaseModel):
     code: int = 0
     message: str = "ok"
     data: Any | None = None
-
