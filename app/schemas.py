@@ -14,13 +14,13 @@ class AssetTagBase(BaseModel):
 class AssetCloudServerBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    instance_id: str
+    instance_id: str = Field(min_length=1)
     vpc_id: str
     cpu: int
     memory_gb: int
     os: str
-    private_ip: str
-    public_ip: str | None = None
+    private_ip: str = Field(min_length=1)
+    public_ip: str = Field(min_length=1)
     expire_time: datetime | None = None
 
 
@@ -58,14 +58,14 @@ class AssetSecurityProductBase(BaseModel):
 
 
 class AssetCreate(BaseModel):
-    asset_code: str
+    asset_code: str = Field(min_length=1)
     asset_type: str = Field(description="CLOUD_SERVER/DB/MIDDLEWARE/SECURITY_PRODUCT")
     name: str
     env: str = "prod"
     status: str = "IN_USE"
     owner: str
     org: str
-    region: str = "cn-east-1"
+    region: str = Field(default="cn-east-1", min_length=1)
     tags: list[AssetTagBase] = []
     cloud_server: AssetCloudServerBase | None = None
     database: AssetDatabaseBase | None = None

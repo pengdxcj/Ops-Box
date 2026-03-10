@@ -1,11 +1,15 @@
+import csv
+import io
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
@@ -34,6 +38,44 @@ from app.schemas import (
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+EXPORT_FIELDS = [
+    "asset_code",
+    "asset_type",
+    "name",
+    "env",
+    "status",
+    "owner",
+    "org",
+    "region",
+    "tags",
+    "instance_id",
+    "vpc_id",
+    "cpu",
+    "memory_gb",
+    "os",
+    "private_ip",
+    "public_ip",
+    "expire_time",
+    "db_type",
+    "db_version",
+    "db_endpoint",
+    "db_port",
+    "db_role",
+    "db_storage_gb",
+    "db_backup_policy",
+    "mw_type",
+    "mw_cluster_name",
+    "mw_version",
+    "mw_node_count",
+    "mw_ha_mode",
+    "sec_product_type",
+    "sec_vendor",
+    "sec_version",
+    "sec_deploy_mode",
+    "sec_coverage_scope",
+    "sec_license_expire",
+]
 
 
 @app.on_event("startup")
@@ -122,6 +164,142 @@ def _validate_extension(asset_type: str, payload: AssetCreate):
         raise HTTPException(status_code=400, detail=f"asset_type={asset_type} requires matching extension payload")
 
 
+def _asset_filters(asset_type: str | None, env: str | None, status: str | None, owner: str | None):
+    filters = []
+    if asset_type:
+        filters.append(Asset.asset_type == asset_type)
+    if env:
+        filters.append(Asset.env == env)
+    if status:
+        filters.append(Asset.status == status)
+    if owner:
+        filters.append(Asset.owner == owner)
+    return and_(*filters) if filters else True
+
+
+def _serialize_tags(tags: list[AssetTag]) -> str:
+    return ";".join(f"{tag.tag_key}={tag.tag_value}" for tag in tags)
+
+
+def _parse_tags(text: str) -> list[dict]:
+    if not text:
+        return []
+    tags = []
+    for raw in text.split(";"):
+        if not raw.strip():
+            continue
+        if "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            tags.append({"tag_key": key, "tag_value": value})
+    return tags
+
+
+def _dedupe_tags(tags: list[dict]) -> list[dict]:
+    seen: dict[str, str] = {}
+    for tag in tags:
+        seen[tag["tag_key"]] = tag["tag_value"]
+    return [{"tag_key": key, "tag_value": value} for key, value in seen.items()]
+
+
+def _require_row_value(row: dict, key: str, row_index: int) -> str:
+    value = (row.get(key) or "").strip()
+    if not value:
+        raise ValueError(f"row {row_index}: {key} is required")
+    return value
+
+
+def _optional_row_value(row: dict, key: str) -> str:
+    return (row.get(key) or "").strip()
+
+
+def _optional_int(row: dict, key: str) -> int | None:
+    value = _optional_row_value(row, key)
+    if not value:
+        return None
+    return int(value)
+
+
+def _parse_datetime(value: str, row_index: int, key: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"row {row_index}: {key} is not a valid ISO datetime") from exc
+
+
+def _asset_to_export_row(asset: Asset) -> dict:
+    row = {field: "" for field in EXPORT_FIELDS}
+    row.update(
+        {
+            "asset_code": asset.asset_code,
+            "asset_type": asset.asset_type,
+            "name": asset.name,
+            "env": asset.env,
+            "status": asset.status,
+            "owner": asset.owner,
+            "org": asset.org,
+            "region": asset.region,
+            "tags": _serialize_tags(asset.tags),
+        }
+    )
+    if asset.cloud_server:
+        row.update(
+            {
+                "instance_id": asset.cloud_server.instance_id,
+                "vpc_id": asset.cloud_server.vpc_id,
+                "cpu": asset.cloud_server.cpu,
+                "memory_gb": asset.cloud_server.memory_gb,
+                "os": asset.cloud_server.os,
+                "private_ip": asset.cloud_server.private_ip,
+                "public_ip": asset.cloud_server.public_ip,
+                "expire_time": asset.cloud_server.expire_time.isoformat()
+                if asset.cloud_server.expire_time
+                else "",
+            }
+        )
+    if asset.database:
+        row.update(
+            {
+                "db_type": asset.database.db_type,
+                "db_version": asset.database.version,
+                "db_endpoint": asset.database.endpoint,
+                "db_port": asset.database.port,
+                "db_role": asset.database.role,
+                "db_storage_gb": asset.database.storage_gb,
+                "db_backup_policy": asset.database.backup_policy,
+            }
+        )
+    if asset.middleware:
+        row.update(
+            {
+                "mw_type": asset.middleware.mw_type,
+                "mw_cluster_name": asset.middleware.cluster_name,
+                "mw_version": asset.middleware.version,
+                "mw_node_count": asset.middleware.node_count,
+                "mw_ha_mode": asset.middleware.ha_mode,
+            }
+        )
+    if asset.security_product:
+        row.update(
+            {
+                "sec_product_type": asset.security_product.product_type,
+                "sec_vendor": asset.security_product.vendor,
+                "sec_version": asset.security_product.version,
+                "sec_deploy_mode": asset.security_product.deploy_mode,
+                "sec_coverage_scope": asset.security_product.coverage_scope,
+                "sec_license_expire": asset.security_product.license_expire.isoformat()
+                if asset.security_product.license_expire
+                else "",
+            }
+        )
+    return row
+
+
 def _fetch_asset_or_404(db: Session, asset_id: int) -> Asset:
     stmt = (
         select(Asset)
@@ -184,17 +362,7 @@ def list_assets(
     owner: str | None = None,
     db: Session = Depends(get_db),
 ):
-    filters = []
-    if asset_type:
-        filters.append(Asset.asset_type == asset_type)
-    if env:
-        filters.append(Asset.env == env)
-    if status:
-        filters.append(Asset.status == status)
-    if owner:
-        filters.append(Asset.owner == owner)
-
-    where_clause = and_(*filters) if filters else True
+    where_clause = _asset_filters(asset_type, env, status, owner)
     total = db.execute(select(func.count()).select_from(Asset).where(where_clause)).scalar_one()
     stmt = (
         select(Asset)
@@ -220,10 +388,167 @@ def list_assets(
     return ApiResponse(data=data.model_dump())
 
 
+@app.get("/api/v1/assets/export")
+def export_assets(
+    asset_type: str | None = None,
+    env: str | None = None,
+    status: str | None = None,
+    owner: str | None = None,
+    db: Session = Depends(get_db),
+):
+    where_clause = _asset_filters(asset_type, env, status, owner)
+    stmt = (
+        select(Asset)
+        .where(where_clause)
+        .options(
+            joinedload(Asset.tags),
+            joinedload(Asset.cloud_server),
+            joinedload(Asset.database),
+            joinedload(Asset.middleware),
+            joinedload(Asset.security_product),
+        )
+        .order_by(Asset.id.asc())
+    )
+    assets = db.execute(stmt).scalars().unique().all()
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=EXPORT_FIELDS)
+    writer.writeheader()
+    for asset in assets:
+        writer.writerow(_asset_to_export_row(asset))
+    buffer.seek(0)
+
+    filename = f"cmdb_assets_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return StreamingResponse(iter([buffer.getvalue()]), media_type="text/csv", headers=headers)
+
+
+@app.post("/api/v1/assets/import", response_model=ApiResponse)
+def import_assets(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="file is required")
+
+    reader = csv.DictReader(io.TextIOWrapper(file.file, encoding="utf-8-sig"))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="csv header is required")
+
+    success = 0
+    errors: list[dict] = []
+    total = 0
+
+    for row_index, row in enumerate(reader, start=2):
+        total += 1
+        try:
+            asset_code = _require_row_value(row, "asset_code", row_index)
+            region = _require_row_value(row, "region", row_index)
+            asset_type = (_optional_row_value(row, "asset_type") or "CLOUD_SERVER").upper()
+
+            exists = db.execute(select(Asset.id).where(Asset.asset_code == asset_code)).scalar_one_or_none()
+            if exists:
+                raise ValueError(f"row {row_index}: asset_code already exists")
+
+            asset = Asset(
+                asset_code=asset_code,
+                asset_type=asset_type,
+                name=_optional_row_value(row, "name") or asset_code,
+                env=_optional_row_value(row, "env") or "prod",
+                status=_optional_row_value(row, "status") or "IN_USE",
+                owner=_optional_row_value(row, "owner") or "import",
+                org=_optional_row_value(row, "org") or "import",
+                region=region,
+            )
+
+            tags = _dedupe_tags(_parse_tags(_optional_row_value(row, "tags")))
+            if tags:
+                _sync_tags(asset, tags)
+
+            if asset_type == "CLOUD_SERVER":
+                asset.cloud_server = AssetCloudServer(
+                    instance_id=_require_row_value(row, "instance_id", row_index),
+                    vpc_id=_require_row_value(row, "vpc_id", row_index),
+                    cpu=int(_require_row_value(row, "cpu", row_index)),
+                    memory_gb=int(_require_row_value(row, "memory_gb", row_index)),
+                    os=_require_row_value(row, "os", row_index),
+                    private_ip=_require_row_value(row, "private_ip", row_index),
+                    public_ip=_require_row_value(row, "public_ip", row_index),
+                    expire_time=_parse_datetime(_optional_row_value(row, "expire_time"), row_index, "expire_time"),
+                )
+            elif asset_type == "DB":
+                asset.database = AssetDatabase(
+                    db_type=_require_row_value(row, "db_type", row_index),
+                    version=_require_row_value(row, "db_version", row_index),
+                    endpoint=_require_row_value(row, "db_endpoint", row_index),
+                    port=int(_require_row_value(row, "db_port", row_index)),
+                    role=_optional_row_value(row, "db_role") or "primary",
+                    storage_gb=_optional_int(row, "db_storage_gb") or 20,
+                    backup_policy=_optional_row_value(row, "db_backup_policy") or "daily",
+                )
+            elif asset_type == "MIDDLEWARE":
+                asset.middleware = AssetMiddleware(
+                    mw_type=_require_row_value(row, "mw_type", row_index),
+                    cluster_name=_require_row_value(row, "mw_cluster_name", row_index),
+                    version=_require_row_value(row, "mw_version", row_index),
+                    node_count=_optional_int(row, "mw_node_count") or 1,
+                    ha_mode=_optional_row_value(row, "mw_ha_mode") or "single",
+                )
+            elif asset_type == "SECURITY_PRODUCT":
+                asset.security_product = AssetSecurityProduct(
+                    product_type=_require_row_value(row, "sec_product_type", row_index),
+                    vendor=_require_row_value(row, "sec_vendor", row_index),
+                    version=_require_row_value(row, "sec_version", row_index),
+                    deploy_mode=_require_row_value(row, "sec_deploy_mode", row_index),
+                    coverage_scope=_require_row_value(row, "sec_coverage_scope", row_index),
+                    license_expire=_parse_datetime(
+                        _optional_row_value(row, "sec_license_expire"), row_index, "sec_license_expire"
+                    ),
+                )
+            else:
+                raise ValueError(f"row {row_index}: asset_type {asset_type} is not supported")
+
+            db.add(asset)
+            db.flush()
+            _record_change(
+                db,
+                asset_id=asset.id,
+                change_type="CREATE",
+                before_data={},
+                after_data=_snapshot_asset(asset),
+                operator="import",
+            )
+            db.commit()
+            success += 1
+        except (ValueError, IntegrityError) as exc:
+            db.rollback()
+            errors.append({"row": row_index, "reason": str(exc)})
+
+    return ApiResponse(
+        data={
+            "total": total,
+            "success": success,
+            "failed": total - success,
+            "errors": errors,
+        }
+    )
+
+
 @app.get("/api/v1/assets/{asset_id}", response_model=ApiResponse)
 def get_asset(asset_id: int, db: Session = Depends(get_db)):
     asset = _fetch_asset_or_404(db, asset_id)
     return ApiResponse(data=AssetOut.model_validate(asset).model_dump())
+
+
+@app.delete("/api/v1/assets/{asset_id}", response_model=ApiResponse)
+def delete_asset(asset_id: int, db: Session = Depends(get_db)):
+    asset = _fetch_asset_or_404(db, asset_id)
+
+    db.query(AssetRelation).filter(
+        (AssetRelation.src_asset_id == asset_id) | (AssetRelation.dst_asset_id == asset_id)
+    ).delete(synchronize_session=False)
+    db.query(AssetChangeLog).filter(AssetChangeLog.asset_id == asset_id).delete(synchronize_session=False)
+
+    db.delete(asset)
+    db.commit()
+    return ApiResponse(data={"deleted": asset_id})
 
 
 @app.put("/api/v1/assets/{asset_id}", response_model=ApiResponse)

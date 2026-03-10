@@ -1,0 +1,2 @@
+﻿asset_code,asset_type,name,env,status,owner,org,region,tags,instance_id,vpc_id,cpu,memory_gb,os,private_ip,public_ip
+import-test-002,CLOUD_SERVER,import-test-002,prod,IN_USE,import,import,cn-east-1,service=demo;iac=manual,i-imp-002,vpc-001,2,4,Ubuntu 22.04,10.0.0.12,1.1.1.2

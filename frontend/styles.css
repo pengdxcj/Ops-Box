@@ -168,9 +168,43 @@ h2 {
 
 .filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+  column-gap: 0.7rem;
+  row-gap: 0.5rem;
+  margin-bottom: 0;
+  align-items: end;
+}
+
+.filters label {
+  gap: 0.2rem;
+}
+
+.filters input,
+.filters select {
+  height: 36px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   margin-bottom: 0.8rem;
+}
+
+.table-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.table-actions .btn {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
 }
 
 label {
@@ -229,6 +263,19 @@ textarea {
   background: transparent;
   color: var(--accent-deep);
   border-color: rgba(15, 143, 111, 0.42);
+}
+
+.btn-danger {
+  background: var(--danger);
+}
+
+.btn-danger:hover {
+  background: #8f2e1d;
+}
+
+.btn-small {
+  padding: 0.38rem 0.7rem;
+  font-size: 0.75rem;
 }
 
 .table-wrap {
@@ -400,5 +447,14 @@ th {
 
   .filters {
     grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
+    align-items: stretch;
+  }
+
+  .table-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

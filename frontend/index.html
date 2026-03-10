@@ -40,41 +40,49 @@
             <p id="assetCountText">&#21152;&#36733;&#20013;...</p>
           </div>
 
-          <div class="filters">
-            <label>
-              &#31867;&#22411;
-              <select id="filterType">
-                <option value="">&#20840;&#37096;</option>
-                <option value="CLOUD_SERVER">CLOUD_SERVER</option>
-                <option value="DB">DB</option>
-                <option value="MIDDLEWARE">MIDDLEWARE</option>
-                <option value="SECURITY_PRODUCT">SECURITY_PRODUCT</option>
-              </select>
-            </label>
-            <label>
-              &#29615;&#22659;
-              <select id="filterEnv">
-                <option value="">&#20840;&#37096;</option>
-                <option value="prod">prod</option>
-                <option value="staging">staging</option>
-                <option value="test">test</option>
-                <option value="dev">dev</option>
-              </select>
-            </label>
-            <label>
-              &#29366;&#24577;
-              <select id="filterStatus">
-                <option value="">&#20840;&#37096;</option>
-                <option value="IN_USE">IN_USE</option>
-                <option value="IDLE">IDLE</option>
-                <option value="DECOMMISSIONED">DECOMMISSIONED</option>
-              </select>
-            </label>
-            <label>
-              &#36127;&#36131;&#20154;
-              <input id="filterOwner" placeholder="ops_team" />
-            </label>
-            <button id="filterBtn" class="btn">&#26597;&#35810;</button>
+          <div class="filter-bar">
+            <div class="filters">
+              <label>
+                &#31867;&#22411;
+                <select id="filterType">
+                  <option value="">&#20840;&#37096;</option>
+                  <option value="CLOUD_SERVER">CLOUD_SERVER</option>
+                  <option value="DB">DB</option>
+                  <option value="MIDDLEWARE">MIDDLEWARE</option>
+                  <option value="SECURITY_PRODUCT">SECURITY_PRODUCT</option>
+                </select>
+              </label>
+              <label>
+                &#29615;&#22659;
+                <select id="filterEnv">
+                  <option value="">&#20840;&#37096;</option>
+                  <option value="prod">prod</option>
+                  <option value="staging">staging</option>
+                  <option value="test">test</option>
+                  <option value="dev">dev</option>
+                </select>
+              </label>
+              <label>
+                &#29366;&#24577;
+                <select id="filterStatus">
+                  <option value="">&#20840;&#37096;</option>
+                  <option value="IN_USE">IN_USE</option>
+                  <option value="IDLE">IDLE</option>
+                  <option value="DECOMMISSIONED">DECOMMISSIONED</option>
+                </select>
+              </label>
+              <label>
+                &#36127;&#36131;&#20154;
+                <input id="filterOwner" placeholder="ops_team" />
+              </label>
+              <button id="filterBtn" class="btn">&#26597;&#35810;</button>
+            </div>
+
+            <div class="table-actions">
+              <button id="exportBtn" class="btn btn-ghost">&#23548;&#20986; CSV</button>
+              <button id="importBtn" class="btn">&#23548;&#20837; CSV</button>
+              <input id="importFile" type="file" accept=".csv" hidden />
+            </div>
           </div>
 
           <div class="table-wrap">
@@ -88,6 +96,7 @@
                   <th>&#29615;&#22659;</th>
                   <th>&#29366;&#24577;</th>
                   <th>&#36127;&#36131;&#20154;</th>
+                  <th>&#25805;&#20316;</th>
                 </tr>
               </thead>
               <tbody id="assetTableBody"></tbody>
@@ -129,7 +138,7 @@
             </label>
             <label>
               &#21306;&#22495;
-              <input name="region" value="cn-east-1" />
+              <input name="region" value="cn-east-1" required />
             </label>
             <label>
               &#29615;&#22659;

@@ -10,7 +10,7 @@ const extensionSchema = {
       { key: "memory_gb", label: "\u5185\u5b58(GB)", required: true, type: "number", placeholder: "8" },
       { key: "os", label: "OS", required: true, placeholder: "Ubuntu 22.04" },
       { key: "private_ip", label: "\u5185\u7f51 IP", required: true, placeholder: "10.0.1.12" },
-      { key: "public_ip", label: "\u516c\u7f51 IP", placeholder: "1.2.3.4" },
+      { key: "public_ip", label: "\u516c\u7f51 IP", required: true, placeholder: "1.2.3.4" },
       {
         key: "expire_time",
         label: "\u5230\u671f\u65f6\u95f4(ISO8601)",
@@ -180,7 +180,7 @@ function renderMetrics(assets) {
 function renderAssetTable(assets) {
   const tbody = document.getElementById("assetTableBody");
   if (!assets.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="muted">\u672a\u67e5\u8be2\u5230\u8d44\u4ea7\u3002</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="muted">\u672a\u67e5\u8be2\u5230\u8d44\u4ea7\u3002</td></tr>`;
     return;
   }
 
@@ -195,6 +195,11 @@ function renderAssetTable(assets) {
         <td>${item.env}</td>
         <td>${item.status}</td>
         <td>${item.owner}</td>
+        <td>
+          <button class="btn btn-danger btn-small" data-action="delete" data-id="${item.id}" data-code="${item.asset_code}">
+            \u5220\u9664
+          </button>
+        </td>
       </tr>
     `
     )
@@ -346,6 +351,56 @@ async function triggerSync() {
   }
 }
 
+async function exportAssets() {
+  const params = currentFilters();
+  const query = toQuery(params);
+  const url = query ? `${API_BASE}/assets/export?${query}` : `${API_BASE}/assets/export`;
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+async function importAssets(event) {
+  const file = event.target.files[0];
+  if (!file) {
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/assets/import`, { method: "POST", body: formData });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || payload.code !== 0) {
+      const msg = payload.detail || payload.message || `\u5bfc\u5165\u5931\u8d25: ${res.status}`;
+      throw new Error(msg);
+    }
+    const data = payload.data || {};
+    showToast(`\u5bfc\u5165\u5b8c\u6210: \u6210\u529f ${data.success || 0} \u6761, \u5931\u8d25 ${data.failed || 0} \u6761`);
+    await loadAll();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
+}
+
+async function deleteAsset(id, code) {
+  const confirmed = window.confirm(`\u786e\u8ba4\u5220\u9664\u8d44\u4ea7 ${code} (#${id})?`);
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await request(`/assets/${id}`, { method: "DELETE" });
+    showToast(`\u8d44\u4ea7 ${code} \u5df2\u5220\u9664`);
+    await loadAll();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
 function bindEvents() {
   document.getElementById("filterBtn").addEventListener("click", loadAssets);
   document.getElementById("refreshAllBtn").addEventListener("click", loadAll);
@@ -353,6 +408,23 @@ function bindEvents() {
   document.getElementById("createAssetForm").addEventListener("submit", createAsset);
   document.getElementById("assetType").addEventListener("change", (event) => {
     renderExtensionFields(event.target.value);
+  });
+  document.getElementById("exportBtn").addEventListener("click", exportAssets);
+  const importInput = document.getElementById("importFile");
+  document.getElementById("importBtn").addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", importAssets);
+  document.getElementById("assetTableBody").addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (target.dataset.action === "delete") {
+      const id = target.dataset.id;
+      const code = target.dataset.code;
+      if (id && code) {
+        deleteAsset(id, code);
+      }
+    }
   });
 }
 

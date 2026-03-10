@@ -34,6 +34,9 @@ python scripts/seed_demo.py
 - `GET /api/v1/assets`
 - `GET /api/v1/assets/{asset_id}`
 - `PUT /api/v1/assets/{asset_id}`
+- `DELETE /api/v1/assets/{asset_id}`
+- `GET /api/v1/assets/export`
+- `POST /api/v1/assets/import`
 - `POST /api/v1/relations`
 - `GET /api/v1/relations/topology?asset_id=1`
 - `POST /api/v1/discovery/sync`
