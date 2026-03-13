@@ -79,6 +79,7 @@
             </div>
 
             <div class="table-actions">
+              <button id="templateBtn" class="btn btn-ghost">下载模板</button>
               <button id="exportBtn" class="btn btn-ghost">&#23548;&#20986; CSV</button>
               <button id="importBtn" class="btn">&#23548;&#20837; CSV</button>
               <input id="importFile" type="file" accept=".csv" hidden />
@@ -171,30 +172,12 @@
         </article>
       </section>
 
-      <section class="grid-two">
-        <article class="card panel">
-          <div class="panel-head">
-            <h2>&#23433;&#20840;&#35206;&#30422;&#29575;</h2>
-            <p id="coverageSummary">&#21152;&#36733;&#20013;...</p>
-          </div>
-          <div id="coverageTypeList" class="stack"></div>
-        </article>
-
-        <article class="card panel">
-          <div class="panel-head">
-            <h2>&#26368;&#36817;&#21464;&#26356;</h2>
-            <p>&#26368;&#26032;&#36164;&#20135;&#21464;&#26356;&#26085;&#24535;</p>
-          </div>
-          <div id="changeLogList" class="stack"></div>
-        </article>
-      </section>
-
       <section class="card panel">
         <div class="panel-head">
-          <h2>&#26410;&#35206;&#30422;&#36164;&#20135;</h2>
-          <p id="uncoveredCountText">&#21152;&#36733;&#20013;...</p>
+          <h2>&#26368;&#36817;&#21464;&#26356;</h2>
+          <p>&#26368;&#26032;&#36164;&#20135;&#21464;&#26356;&#26085;&#24535;</p>
         </div>
-        <div id="uncoveredList" class="chip-list"></div>
+        <div id="changeLogList" class="stack"></div>
       </section>
     </main>
 

@@ -236,44 +236,11 @@ async function loadAssets() {
 }
 
 async function loadCoverage() {
-  const coverage = await request("/security/coverage");
-  document.getElementById("coverageSummary").textContent =
-    `\u5df2\u8986\u76d6 ${coverage.protected}/${coverage.total} (${coverage.ratio}%)`;
-  const list = document.getElementById("coverageTypeList");
-  const rows = Object.entries(coverage.by_type || {});
-  if (!rows.length) {
-    list.innerHTML = `<div class="row-item"><span class="muted">\u6682\u65e0\u4f7f\u7528\u4e2d\u7684\u8d44\u4ea7\u3002</span></div>`;
-    return;
-  }
-
-  list.innerHTML = rows
-    .map(
-      ([type, item]) => `
-      <div class="row-item">
-        <strong>${type}</strong>
-        <span>${item.protected}/${item.total} (${item.ratio}%)</span>
-      </div>
-    `
-    )
-    .join("");
+  return;
 }
 
 async function loadUncovered() {
-  const result = await request("/security/uncovered");
-  document.getElementById("uncoveredCountText").textContent =
-    `\u4f7f\u7528\u4e2d\u672a\u8986\u76d6\u8d44\u4ea7 ${result.total} \u6761`;
-  const list = document.getElementById("uncoveredList");
-  if (!result.items.length) {
-    list.innerHTML = `<span class="chip">\u5df2\u5168\u90e8\u8986\u76d6</span>`;
-    return;
-  }
-
-  list.innerHTML = result.items
-    .map(
-      (item) =>
-        `<span class="chip warn">#${item.id} ${item.asset_code} (${item.asset_type}/${item.env})</span>`
-    )
-    .join("");
+  return;
 }
 
 async function loadChanges() {
@@ -298,7 +265,7 @@ async function loadChanges() {
 
 async function loadAll() {
   try {
-    await Promise.all([loadAssets(), loadCoverage(), loadUncovered(), loadChanges()]);
+    await Promise.all([loadAssets(), loadChanges()]);
   } catch (error) {
     showToast(error.message, true);
   }
@@ -363,6 +330,91 @@ async function exportAssets() {
   document.body.removeChild(link);
 }
 
+function downloadTemplate() {
+  const header = [
+    "asset_code",
+    "asset_type",
+    "name",
+    "env",
+    "status",
+    "owner",
+    "org",
+    "region",
+    "tags",
+    "instance_id",
+    "vpc_id",
+    "cpu",
+    "memory_gb",
+    "os",
+    "private_ip",
+    "public_ip",
+    "expire_time",
+    "db_type",
+    "db_version",
+    "db_endpoint",
+    "db_port",
+    "db_role",
+    "db_storage_gb",
+    "db_backup_policy",
+    "mw_type",
+    "mw_cluster_name",
+    "mw_version",
+    "mw_node_count",
+    "mw_ha_mode",
+    "sec_product_type",
+    "sec_vendor",
+    "sec_version",
+    "sec_deploy_mode",
+    "sec_coverage_scope",
+    "sec_license_expire",
+  ];
+  const sample = [
+    "ecs-prod-012",
+    "CLOUD_SERVER",
+    "prod-app-ecs-012",
+    "prod",
+    "IN_USE",
+    "ops_team",
+    "platform",
+    "cn-east-1",
+    "service=order;tier=app",
+    "i-ecs-prod-012",
+    "vpc-001",
+    "4",
+    "8",
+    "Ubuntu 22.04",
+    "10.0.1.12",
+    "1.2.3.4",
+    "2026-12-31T12:00:00",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
+  const content = `${header.join(",")}\n${sample.join(",")}\n`;
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "cmdb_import_template.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 async function importAssets(event) {
   const file = event.target.files[0];
   if (!file) {
@@ -409,6 +461,7 @@ function bindEvents() {
   document.getElementById("assetType").addEventListener("change", (event) => {
     renderExtensionFields(event.target.value);
   });
+  document.getElementById("templateBtn").addEventListener("click", downloadTemplate);
   document.getElementById("exportBtn").addEventListener("click", exportAssets);
   const importInput = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", () => importInput.click());
