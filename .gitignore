@@ -1,0 +1,29 @@
+# 虚拟环境
+.venv/
+.conda-py311/
+
+# 数据库文件
+*.db
+
+# 编译产物
+dist/
+
+# 环境配置文件
+.env
+
+# 临时文件
+__pycache__/
+*.pyc
+
+# IDE相关
+.vscode/
+.idea/
+
+# 操作系统相关
+Thumbs.db
+.DS_Store
+
+# 其他
+*.log
+*.tmp
+*.temp
