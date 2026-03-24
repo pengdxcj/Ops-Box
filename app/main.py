@@ -1,9 +1,13 @@
 import csv
 import io
 import json
-from datetime import datetime
+import threading
+import time
+import requests
+import os
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional, List, Union
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -13,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
-from app.database import Base, engine, get_db
+from app.database import Base, engine, get_db, SessionLocal
 from app.models import (
     Asset,
     AssetChangeLog,
@@ -23,6 +27,9 @@ from app.models import (
     AssetRelation,
     AssetSecurityProduct,
     AssetTag,
+    EsCluster,
+    EsSnapshotTask,
+    EsSnapshotTaskLog,
 )
 from app.schemas import (
     ApiResponse,
@@ -33,11 +40,27 @@ from app.schemas import (
     PageResult,
     RelationCreate,
     RelationOut,
+    EsClusterCreate,
+    EsClusterOut,
+    EsClusterUpdate,
+    EsClusterTest,
+    EsSnapshotCreate,
+    EsSnapshotTaskCreate,
+    EsSnapshotTaskOut,
+    EsSnapshotTaskUpdate,
+    EsSnapshotTaskLogOut,
 )
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+# 创建脚本存储文件夹
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+SCRIPTS_DIR.mkdir(exist_ok=True)
+
+# 挂载脚本文件夹作为静态文件
+app.mount("/scripts", StaticFiles(directory=SCRIPTS_DIR), name="scripts")
 
 EXPORT_FIELDS = [
     "asset_code",
@@ -81,6 +104,12 @@ EXPORT_FIELDS = [
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    start_snapshot_scheduler()
+
+
+@app.on_event("shutdown")
+def shutdown():
+    stop_snapshot_scheduler()
 
 
 @app.get("/", include_in_schema=False)
@@ -112,7 +141,7 @@ def _snapshot_asset(asset: Asset) -> dict:
     }
 
 
-def _create_or_replace_extension(asset: Asset, payload: dict | None, creator: Callable[[], object]):
+def _create_or_replace_extension(asset: Asset, payload: Optional[dict], creator: Callable[[], object]):
     if payload is None:
         return
     extension = creator()
@@ -121,13 +150,13 @@ def _create_or_replace_extension(asset: Asset, payload: dict | None, creator: Ca
     setattr(asset, extension.__class__.__name__.replace("Asset", "").lower(), extension)
 
 
-def _sync_tags(asset: Asset, tags: list[dict]):
+def _sync_tags(asset: Asset, tags: List[dict]):
     asset.tags.clear()
     for tag in tags:
         asset.tags.append(AssetTag(tag_key=tag["tag_key"], tag_value=tag["tag_value"]))
 
 
-def _apply_extensions(asset: Asset, payload: AssetCreate | AssetUpdate):
+def _apply_extensions(asset: Asset, payload: Union[AssetCreate, AssetUpdate]):
     if payload.cloud_server is not None:
         asset.cloud_server = AssetCloudServer(**payload.cloud_server.model_dump())
     if payload.database is not None:
@@ -164,7 +193,7 @@ def _validate_extension(asset_type: str, payload: AssetCreate):
         raise HTTPException(status_code=400, detail=f"asset_type={asset_type} requires matching extension payload")
 
 
-def _asset_filters(asset_type: str | None, env: str | None, status: str | None, owner: str | None):
+def _asset_filters(asset_type: Optional[str], env: Optional[str], status: Optional[str], owner: Optional[str]):
     filters = []
     if asset_type:
         filters.append(Asset.asset_type == asset_type)
@@ -177,11 +206,11 @@ def _asset_filters(asset_type: str | None, env: str | None, status: str | None, 
     return and_(*filters) if filters else True
 
 
-def _serialize_tags(tags: list[AssetTag]) -> str:
+def _serialize_tags(tags: List[AssetTag]) -> str:
     return ";".join(f"{tag.tag_key}={tag.tag_value}" for tag in tags)
 
 
-def _parse_tags(text: str) -> list[dict]:
+def _parse_tags(text: str) -> List[dict]:
     if not text:
         return []
     tags = []
@@ -198,7 +227,7 @@ def _parse_tags(text: str) -> list[dict]:
     return tags
 
 
-def _dedupe_tags(tags: list[dict]) -> list[dict]:
+def _dedupe_tags(tags: List[dict]) -> List[dict]:
     seen: dict[str, str] = {}
     for tag in tags:
         seen[tag["tag_key"]] = tag["tag_value"]
@@ -216,14 +245,14 @@ def _optional_row_value(row: dict, key: str) -> str:
     return (row.get(key) or "").strip()
 
 
-def _optional_int(row: dict, key: str) -> int | None:
+def _optional_int(row: dict, key: str) -> Optional[int]:
     value = _optional_row_value(row, key)
     if not value:
         return None
     return int(value)
 
 
-def _parse_datetime(value: str, row_index: int, key: str) -> datetime | None:
+def _parse_datetime(value: str, row_index: int, key: str) -> Optional[datetime]:
     if not value:
         return None
     try:
@@ -356,10 +385,10 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
 def list_assets(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
-    asset_type: str | None = None,
-    env: str | None = None,
-    status: str | None = None,
-    owner: str | None = None,
+    asset_type: Optional[str] = None,
+    env: Optional[str] = None,
+    status: Optional[str] = None,
+    owner: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     where_clause = _asset_filters(asset_type, env, status, owner)
@@ -390,10 +419,10 @@ def list_assets(
 
 @app.get("/api/v1/assets/export")
 def export_assets(
-    asset_type: str | None = None,
-    env: str | None = None,
-    status: str | None = None,
-    owner: str | None = None,
+    asset_type: Optional[str] = None,
+    env: Optional[str] = None,
+    status: Optional[str] = None,
+    owner: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     where_clause = _asset_filters(asset_type, env, status, owner)
@@ -708,7 +737,7 @@ def security_uncovered(db: Session = Depends(get_db)):
 
 @app.get("/api/v1/audit/changes", response_model=ApiResponse)
 def list_changes(
-    asset_id: int | None = None,
+    asset_id: Optional[int] = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -733,3 +762,759 @@ def list_changes(
         items=[ChangeLogOut.model_validate(log).model_dump() for log in logs],
     )
     return ApiResponse(data=data.model_dump())
+
+
+def _normalize_base_url(value: str) -> str:
+    return value.rstrip("/")
+
+
+def _fetch_es_cluster_or_404(db: Session, cluster_id: int) -> EsCluster:
+    cluster = db.execute(select(EsCluster).where(EsCluster.id == cluster_id)).scalars().first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="es cluster not found")
+    return cluster
+
+
+def _es_auth(cluster: EsCluster):
+    if cluster.username:
+        return (cluster.username, cluster.password or "")
+    return None
+
+
+def _es_request(
+    cluster: EsCluster,
+    method: str,
+    path: str,
+    params: Optional[dict] = None,
+    json_body: Optional[dict] = None,
+    timeout: int = 8,
+):
+    url = f"{cluster.base_url}{path}"
+    try:
+        res = requests.request(
+            method,
+            url,
+            params=params,
+            json=json_body,
+            auth=_es_auth(cluster),
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"ES????: {exc}") from exc
+
+    payload = None
+    if res.headers.get("content-type", "").startswith("application/json"):
+        payload = res.json()
+
+    if not res.ok:
+        detail = None
+        if isinstance(payload, dict):
+            detail = payload.get("error") or payload.get("message")
+        if not detail:
+            detail = res.text[:500]
+        raise HTTPException(status_code=502, detail=f"ES????: {res.status_code} {detail}")
+
+    return payload if payload is not None else {}
+
+
+def _require_snapshot_repo(cluster: EsCluster) -> str:
+    repo = (cluster.snapshot_repo or "").strip()
+    if not repo:
+        raise HTTPException(status_code=400, detail="snapshot_repo is required")
+    return repo
+
+
+@app.get("/api/v1/es/clusters", response_model=ApiResponse)
+def list_es_clusters(db: Session = Depends(get_db)):
+    clusters = db.execute(select(EsCluster).order_by(EsCluster.id.desc())).scalars().all()
+    return ApiResponse(data=[EsClusterOut.model_validate(c).model_dump() for c in clusters])
+
+
+@app.post("/api/v1/es/clusters", response_model=ApiResponse)
+def create_es_cluster(payload: EsClusterCreate, db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    base_url = payload.base_url.strip()
+    if not base_url:
+        raise HTTPException(status_code=400, detail="base_url is required")
+
+    cluster = EsCluster(
+        name=name,
+        base_url=_normalize_base_url(base_url),
+        username=(payload.username or "").strip() or None,
+        password=payload.password or None,
+        snapshot_repo=(payload.snapshot_repo or "").strip() or None,
+    )
+    try:
+        db.add(cluster)
+        db.commit()
+        db.refresh(cluster)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="cluster name already exists") from exc
+
+    return ApiResponse(data=EsClusterOut.model_validate(cluster).model_dump())
+
+
+
+@app.put("/api/v1/es/clusters/{cluster_id}", response_model=ApiResponse)
+def update_es_cluster(cluster_id: int, payload: EsClusterUpdate, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if "name" in update_data:
+        name = (update_data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        cluster.name = name
+    if "base_url" in update_data:
+        base_url = (update_data.get("base_url") or "").strip()
+        if not base_url:
+            raise HTTPException(status_code=400, detail="base_url is required")
+        cluster.base_url = _normalize_base_url(base_url)
+    if "username" in update_data:
+        cluster.username = (update_data.get("username") or "").strip() or None
+    if "password" in update_data:
+        cluster.password = update_data.get("password") or None
+    if "snapshot_repo" in update_data:
+        cluster.snapshot_repo = (update_data.get("snapshot_repo") or "").strip() or None
+
+    try:
+        db.add(cluster)
+        db.commit()
+        db.refresh(cluster)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="cluster name already exists") from exc
+
+    return ApiResponse(data=EsClusterOut.model_validate(cluster).model_dump())
+
+
+@app.delete("/api/v1/es/clusters/{cluster_id}", response_model=ApiResponse)
+def delete_es_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    db.delete(cluster)
+    db.commit()
+    return ApiResponse(data={"deleted": cluster_id})
+
+
+@app.post("/api/v1/es/clusters/test", response_model=ApiResponse)
+def test_es_cluster_by_payload(payload: EsClusterTest):
+    temp_cluster = EsCluster(
+        name="temp",
+        base_url=_normalize_base_url(payload.base_url.strip()),
+        username=(payload.username or "").strip() or None,
+        password=payload.password or None,
+    )
+    data = _es_request(temp_cluster, "GET", "/_cluster/health")
+    return ApiResponse(data={"cluster_name": data.get("cluster_name"), "status": data.get("status")})
+
+
+
+@app.get("/api/v1/es/clusters/{cluster_id}/repositories", response_model=ApiResponse)
+def list_es_repositories(cluster_id: int, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    payload = _es_request(cluster, "GET", "/_snapshot")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="ES repository response invalid")
+    repos = sorted(payload.keys())
+    return ApiResponse(data={"items": repos})
+
+
+@app.post("/api/v1/es/clusters/{cluster_id}/test", response_model=ApiResponse)
+def test_es_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    data = _es_request(cluster, "GET", "/_cluster/health")
+    return ApiResponse(data={"cluster_name": data.get("cluster_name"), "status": data.get("status")})
+
+
+@app.get("/api/v1/es/clusters/{cluster_id}/summary", response_model=ApiResponse)
+def es_cluster_summary(cluster_id: int, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    state = _es_request(cluster, "GET", "/_cluster/state")
+    health = _es_request(cluster, "GET", "/_cluster/health")
+    stats = _es_request(cluster, "GET", "/_cluster/stats")
+
+    nodes = (stats.get("nodes") or {}).get("count") or {}
+    indices = stats.get("indices") or {}
+
+    data = {
+        "cluster": {
+            "name": state.get("cluster_name"),
+            "uuid": state.get("cluster_uuid"),
+            "status": health.get("status"),
+        },
+        "nodes": {
+            "total": nodes.get("total"),
+            "master": nodes.get("master"),
+            "data": nodes.get("data"),
+        },
+        "shards": {
+            "total": health.get("active_shards"),
+            "primary": health.get("active_primary_shards"),
+            "replica": health.get("active_shards") - health.get("active_primary_shards") if health.get("active_shards") and health.get("active_primary_shards") else 0,
+        },
+        "indices": {
+            "count": indices.get("count"),
+            "docs": (indices.get("docs") or {}).get("count"),
+            "store_bytes": (indices.get("store") or {}).get("size_in_bytes"),
+        },
+    }
+    return ApiResponse(data=data)
+
+
+@app.get("/api/v1/es/clusters/{cluster_id}/unbacked", response_model=ApiResponse)
+def es_unbacked_indices(
+    cluster_id: int,
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    repo = _require_snapshot_repo(cluster)
+    pattern = "*"
+    if keyword:
+        pattern = keyword.strip()
+        if not pattern.endswith("*"):
+            pattern = f"{pattern}*"
+
+    indices_payload = _es_request(
+        cluster,
+        "GET",
+        "/_cat/indices",
+        params={"format": "json", "index": pattern},
+    )
+    if not isinstance(indices_payload, list):
+        raise HTTPException(status_code=502, detail="ES indices response invalid")
+    indices = sorted({item.get("index") for item in indices_payload if item.get("index")})
+
+    snapshots_payload = _es_request(cluster, "GET", f"/_snapshot/{repo}/_all")
+    snapshots = (snapshots_payload or {}).get("snapshots") or []
+    backed = {idx for snap in snapshots for idx in snap.get("indices", [])}
+
+    unbacked = [name for name in indices if name not in backed]
+    return ApiResponse(data={"total": len(unbacked), "items": unbacked, "repo": repo})
+
+
+@app.post("/api/v1/es/clusters/{cluster_id}/snapshots", response_model=ApiResponse)
+def es_create_snapshot(cluster_id: int, payload: EsSnapshotCreate, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, cluster_id)
+    repo = _require_snapshot_repo(cluster)
+
+    body = {"indices": payload.index, "include_global_state": False}
+    result = _es_request(
+        cluster,
+        "PUT",
+        f"/_snapshot/{repo}/{payload.snapshot}",
+        params={"wait_for_completion": "true"},
+        json_body=body,
+    )
+    return ApiResponse(data=result)
+
+
+
+
+
+
+
+
+SNAPSHOT_TASK_STATUS_PENDING = "PENDING"
+SNAPSHOT_TASK_STATUS_RUNNING = "RUNNING"
+SNAPSHOT_TASK_STATUS_SUCCESS = "SUCCESS"
+SNAPSHOT_TASK_STATUS_FAILED = "FAILED"
+SNAPSHOT_TASK_STATUS_RETRYING = "RETRYING"
+SNAPSHOT_TASK_STATUS_CANCELED = "CANCELED"
+
+snapshot_scheduler_stop = threading.Event()
+snapshot_scheduler_thread: Optional[threading.Thread] = None
+
+
+def _normalize_schedule_time(value: datetime) -> datetime:
+    # 确保返回不带时区的本地时间
+    # 前端已经处理了时区，传递的是正确的本地时间
+    if value.tzinfo is not None:
+        value = value.replace(tzinfo=None)
+    return value.replace(second=0, microsecond=0)
+
+
+def _build_snapshot_name(index_name: str, scheduled_at: datetime) -> str:
+    safe_index = index_name.replace(" ", "_").replace("/", "_")
+    return f"auto_{safe_index}_{scheduled_at.strftime('%Y%m%d_%H%M')}"
+
+
+def _record_snapshot_task_log(
+    db: Session,
+    task: EsSnapshotTask,
+    status: str,
+    executed_at: datetime,
+    error_message: Optional[str],
+    result: Optional[dict],
+):
+    db.add(
+        EsSnapshotTaskLog(
+            task_id=task.id,
+            task_created_at=task.created_at,
+            index_name=task.index_name,
+            snapshot_name=task.snapshot_name,
+            scheduled_at=task.scheduled_at,
+            executed_at=executed_at,
+            status=status,
+            error_message=error_message,
+            result_json=json.dumps(result, ensure_ascii=False) if result is not None else None,
+        )
+    )
+
+
+def _execute_snapshot_task(db: Session, task: EsSnapshotTask):
+    if task.status not in (SNAPSHOT_TASK_STATUS_PENDING, SNAPSHOT_TASK_STATUS_RETRYING):
+        return
+
+    now = datetime.now()
+    task.status = SNAPSHOT_TASK_STATUS_RUNNING
+    task.last_run_at = now
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    attempt_status = SNAPSHOT_TASK_STATUS_FAILED
+    error_message = None
+    result = None
+
+    try:
+        cluster = _fetch_es_cluster_or_404(db, task.cluster_id)
+        repo = _require_snapshot_repo(cluster)
+        snapshot_name = task.snapshot_name or _build_snapshot_name(task.index_name, task.scheduled_at)
+        task.snapshot_name = snapshot_name
+
+        body = {"indices": task.index_name, "include_global_state": False}
+        # 发起快照请求，不等待完成
+        _es_request(
+            cluster,
+            "PUT",
+            f"/_snapshot/{repo}/{snapshot_name}",
+            params={"wait_for_completion": "false"},
+            json_body=body,
+            timeout=30,
+        )
+        
+        # 开始轮询快照状态
+        import time
+        max_timeout = 2600  # 最大超时时间，单位：秒
+        poll_interval = 30  # 轮询间隔，单位：秒
+        start_time = time.time()
+        
+        while time.time() - start_time < max_timeout:
+            # 检查任务是否被终止
+            db.refresh(task)
+            if task.status == SNAPSHOT_TASK_STATUS_CANCELED:
+                error_message = "任务被手动终止"
+                attempt_status = SNAPSHOT_TASK_STATUS_CANCELED
+                break
+                
+            time.sleep(poll_interval)
+            # 查询快照状态
+            try:
+                status_result = _es_request(
+                    cluster,
+                    "GET",
+                    f"/_snapshot/{repo}/{snapshot_name}",
+                    timeout=30,
+                )
+                
+                snapshot_status = status_result.get('snapshots', [{}])[0].get('state')
+                if snapshot_status == 'SUCCESS':
+                    attempt_status = SNAPSHOT_TASK_STATUS_SUCCESS
+                    task.status = SNAPSHOT_TASK_STATUS_SUCCESS
+                    task.last_success_at = datetime.now()
+                    task.last_error = None
+                    task.result_json = json.dumps(status_result, ensure_ascii=False)
+                    task.next_run_at = None
+                    break
+                elif snapshot_status == 'FAILED':
+                    error_message = f"快照创建失败: {status_result.get('snapshots', [{}])[0].get('failures', [{}])[0].get('reason', 'Unknown error')}"
+                    attempt_status = SNAPSHOT_TASK_STATUS_FAILED
+                    break
+                # IN_PROGRESS 状态，继续轮询
+            except Exception as exc:
+                # 记录错误但继续轮询，避免网络临时问题导致任务失败
+                pass
+        
+        # 超时处理
+        if time.time() - start_time >= max_timeout:
+            error_message = f"快照创建超时，超过最大等待时间 {max_timeout} 秒"
+            attempt_status = SNAPSHOT_TASK_STATUS_FAILED
+    except HTTPException as exc:
+        error_message = str(exc.detail)
+    except Exception as exc:
+        error_message = str(exc)
+
+    if attempt_status == SNAPSHOT_TASK_STATUS_CANCELED:
+        # 任务被手动终止，不进行重试
+        task.status = SNAPSHOT_TASK_STATUS_CANCELED
+        task.next_run_at = None
+        task.last_error = error_message
+    elif attempt_status != SNAPSHOT_TASK_STATUS_SUCCESS:
+        task.retry_count += 1
+        task.last_error = error_message
+        if task.retry_count <= task.max_retries:
+            task.status = SNAPSHOT_TASK_STATUS_RETRYING
+            task.next_run_at = datetime.now() + timedelta(minutes=task.retry_interval_minutes)
+        else:
+            task.status = SNAPSHOT_TASK_STATUS_FAILED
+            task.next_run_at = None
+
+    _record_snapshot_task_log(db, task, attempt_status, datetime.now(), error_message, result)
+    db.add(task)
+    db.commit()
+
+
+def _snapshot_scheduler_loop():
+    while not snapshot_scheduler_stop.is_set():
+        now = datetime.now()
+        db = SessionLocal()
+        try:
+            tasks = (
+                db.execute(
+                    select(EsSnapshotTask)
+                    .where(
+                        EsSnapshotTask.status.in_(
+                            [SNAPSHOT_TASK_STATUS_PENDING, SNAPSHOT_TASK_STATUS_RETRYING]
+                        ),
+                        EsSnapshotTask.next_run_at <= now,
+                    )
+                    .order_by(EsSnapshotTask.next_run_at.asc())
+                    .limit(5)
+                )
+                .scalars()
+                .all()
+            )
+            for task in tasks:
+                _execute_snapshot_task(db, task)
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+        snapshot_scheduler_stop.wait(5)
+
+
+def start_snapshot_scheduler():
+    global snapshot_scheduler_thread
+    if snapshot_scheduler_thread and snapshot_scheduler_thread.is_alive():
+        return
+    snapshot_scheduler_stop.clear()
+    snapshot_scheduler_thread = threading.Thread(target=_snapshot_scheduler_loop, daemon=True)
+    snapshot_scheduler_thread.start()
+
+
+def stop_snapshot_scheduler():
+    snapshot_scheduler_stop.set()
+    if snapshot_scheduler_thread and snapshot_scheduler_thread.is_alive():
+        snapshot_scheduler_thread.join(timeout=2)
+
+
+@app.post("/api/v1/es/snapshots/tasks", response_model=ApiResponse)
+def create_snapshot_task(payload: EsSnapshotTaskCreate, db: Session = Depends(get_db)):
+    cluster = _fetch_es_cluster_or_404(db, payload.cluster_id)
+    _require_snapshot_repo(cluster)
+
+    scheduled_at = _normalize_schedule_time(payload.scheduled_at)
+    now = datetime.now()  # 使用本地时间
+    # 确保scheduled_at也不带时区，与本地时间保持一致
+    if scheduled_at.tzinfo is not None:
+        scheduled_at = scheduled_at.replace(tzinfo=None)
+    next_run_at = scheduled_at if scheduled_at >= now else now
+
+    task = EsSnapshotTask(
+        cluster_id=payload.cluster_id,
+        index_name=payload.index_name.strip(),
+        snapshot_name=(payload.snapshot_name or "").strip() or None,
+        scheduled_at=scheduled_at,
+        next_run_at=next_run_at,
+        status=SNAPSHOT_TASK_STATUS_PENDING,
+        retry_count=0,
+        max_retries=payload.max_retries,
+        retry_interval_minutes=payload.retry_interval_minutes,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return ApiResponse(data=EsSnapshotTaskOut.model_validate(task).model_dump())
+
+
+@app.get("/api/v1/es/snapshots/tasks", response_model=ApiResponse)
+def list_snapshot_tasks(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+    cluster_id: Optional[int] = None,
+    status: Optional[str] = None,
+    index_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    filters = []
+    if cluster_id is not None:
+        filters.append(EsSnapshotTask.cluster_id == cluster_id)
+    if status:
+        filters.append(EsSnapshotTask.status == status)
+    if index_name:
+        filters.append(EsSnapshotTask.index_name.ilike(f"%{index_name}%"))
+    where_clause = and_(*filters) if filters else True
+
+    total = db.execute(select(func.count()).select_from(EsSnapshotTask).where(where_clause)).scalar_one()
+    tasks = (
+        db.execute(
+            select(EsSnapshotTask)
+            .where(where_clause)
+            .order_by(EsSnapshotTask.id.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        .scalars()
+        .all()
+    )
+    data = PageResult(
+        total=total,
+        page=page,
+        size=size,
+        items=[EsSnapshotTaskOut.model_validate(task).model_dump() for task in tasks],
+    )
+    return ApiResponse(data=data.model_dump())
+
+
+@app.get("/api/v1/es/snapshots/tasks/{task_id}", response_model=ApiResponse)
+def get_snapshot_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.execute(select(EsSnapshotTask).where(EsSnapshotTask.id == task_id)).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="snapshot task not found")
+    logs = (
+        db.execute(
+            select(EsSnapshotTaskLog)
+            .where(EsSnapshotTaskLog.task_id == task_id)
+            .order_by(EsSnapshotTaskLog.id.desc())
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
+    return ApiResponse(
+        data={
+            "task": EsSnapshotTaskOut.model_validate(task).model_dump(),
+            "logs": [EsSnapshotTaskLogOut.model_validate(log).model_dump() for log in logs],
+        }
+    )
+
+
+@app.post("/api/v1/es/snapshots/tasks/{task_id}/terminate", response_model=ApiResponse)
+def terminate_snapshot_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.execute(select(EsSnapshotTask).where(EsSnapshotTask.id == task_id)).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="snapshot task not found")
+    
+    if task.status != SNAPSHOT_TASK_STATUS_RUNNING:
+        raise HTTPException(status_code=400, detail="only running tasks can be terminated")
+    
+    task.status = SNAPSHOT_TASK_STATUS_CANCELED
+    task.next_run_at = None
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return ApiResponse(data=EsSnapshotTaskOut.model_validate(task).model_dump())
+
+
+@app.get("/api/v1/es/snapshots/tasks/logs", response_model=ApiResponse)
+def list_snapshot_task_logs(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+    task_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    filters = []
+    if task_id is not None:
+        filters.append(EsSnapshotTaskLog.task_id == task_id)
+    where_clause = and_(*filters) if filters else True
+    total = db.execute(select(func.count()).select_from(EsSnapshotTaskLog).where(where_clause)).scalar_one()
+    logs = (
+        db.execute(
+            select(EsSnapshotTaskLog)
+            .where(where_clause)
+            .order_by(EsSnapshotTaskLog.id.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        .scalars()
+        .all()
+    )
+    data = PageResult(
+        total=total,
+        page=page,
+        size=size,
+        items=[EsSnapshotTaskLogOut.model_validate(log).model_dump() for log in logs],
+    )
+    return ApiResponse(data=data.model_dump())
+
+
+@app.put("/api/v1/es/snapshots/tasks/{task_id}", response_model=ApiResponse)
+def update_snapshot_task(task_id: int, payload: EsSnapshotTaskUpdate, db: Session = Depends(get_db)):
+    task = db.execute(select(EsSnapshotTask).where(EsSnapshotTask.id == task_id)).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="snapshot task not found")
+    if task.status == SNAPSHOT_TASK_STATUS_RUNNING:
+        raise HTTPException(status_code=409, detail="snapshot task is running")
+    if task.status == SNAPSHOT_TASK_STATUS_CANCELED:
+        raise HTTPException(status_code=409, detail="snapshot task is canceled")
+
+    updated = False
+    if payload.index_name is not None:
+        task.index_name = payload.index_name.strip()
+        updated = True
+    if payload.snapshot_name is not None:
+        task.snapshot_name = payload.snapshot_name.strip() or None
+        updated = True
+    if payload.scheduled_at is not None:
+        scheduled_at = _normalize_schedule_time(payload.scheduled_at)
+        task.scheduled_at = scheduled_at
+        task.next_run_at = scheduled_at if scheduled_at >= datetime.now() else datetime.now()
+        updated = True
+    if payload.max_retries is not None:
+        task.max_retries = payload.max_retries
+        updated = True
+    if payload.retry_interval_minutes is not None:
+        task.retry_interval_minutes = payload.retry_interval_minutes
+        updated = True
+
+    if updated:
+        task.status = SNAPSHOT_TASK_STATUS_PENDING
+        task.retry_count = 0
+        task.last_error = None
+        task.last_run_at = None
+        task.last_success_at = None
+        task.result_json = None
+
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return ApiResponse(data=EsSnapshotTaskOut.model_validate(task).model_dump())
+
+
+@app.post("/api/v1/es/snapshots/tasks/{task_id}/cancel", response_model=ApiResponse)
+def cancel_snapshot_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.execute(select(EsSnapshotTask).where(EsSnapshotTask.id == task_id)).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="snapshot task not found")
+    if task.status == SNAPSHOT_TASK_STATUS_RUNNING:
+        raise HTTPException(status_code=409, detail="snapshot task is running")
+    if task.status == SNAPSHOT_TASK_STATUS_CANCELED:
+        raise HTTPException(status_code=409, detail="snapshot task is already canceled")
+
+    task.status = SNAPSHOT_TASK_STATUS_CANCELED
+    task.next_run_at = None
+    db.add(task)
+    db.commit()
+    return ApiResponse(data={"canceled": task_id})
+
+
+@app.delete("/api/v1/es/snapshots/tasks/{task_id}", response_model=ApiResponse)
+def delete_snapshot_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.execute(select(EsSnapshotTask).where(EsSnapshotTask.id == task_id)).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="snapshot task not found")
+    if task.status == SNAPSHOT_TASK_STATUS_RUNNING:
+        raise HTTPException(status_code=409, detail="snapshot task is running")
+
+    # 真正删除任务记录
+    db.delete(task)
+    db.commit()
+    return ApiResponse(data={"deleted": task_id})
+
+
+# 脚本管理相关API
+@app.post("/api/v1/scripts/upload", response_model=ApiResponse)
+async def upload_script(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="file is required")
+    
+    if not file.filename.endswith(".py"):
+        raise HTTPException(status_code=400, detail="only Python scripts (.py) are allowed")
+    
+    # 生成唯一的文件名，避免冲突
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    safe_filename = file.filename.replace(" ", "_")
+    unique_filename = f"{timestamp}_{safe_filename}"
+    file_path = SCRIPTS_DIR / unique_filename
+    
+    # 保存文件
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save script: {str(e)}")
+    
+    # 构建脚本URL
+    script_url = f"/scripts/{unique_filename}"
+    
+    return ApiResponse(data={
+        "filename": unique_filename,
+        "original_filename": file.filename,
+        "url": script_url,
+        "size": len(content),
+        "uploaded_at": datetime.utcnow().isoformat()
+    })
+
+
+@app.get("/api/v1/scripts", response_model=ApiResponse)
+def list_scripts():
+    scripts = []
+    try:
+        for file_path in SCRIPTS_DIR.iterdir():
+            if file_path.is_file() and file_path.suffix == ".py":
+                stat = file_path.stat()
+                scripts.append({
+                    "filename": file_path.name,
+                    "size": stat.st_size,
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "url": f"/scripts/{file_path.name}"
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list scripts: {str(e)}")
+    
+    return ApiResponse(data={"total": len(scripts), "items": scripts})
+
+
+@app.get("/api/v1/scripts/{filename}", response_model=ApiResponse)
+def get_script(filename: str):
+    file_path = SCRIPTS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="script not found")
+    
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read script: {str(e)}")
+    
+    stat = file_path.stat()
+    return ApiResponse(data={
+        "filename": filename,
+        "content": content,
+        "size": stat.st_size,
+        "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "url": f"/scripts/{filename}"
+    })
+
+
+@app.delete("/api/v1/scripts/{filename}", response_model=ApiResponse)
+def delete_script(filename: str):
+    file_path = SCRIPTS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="script not found")
+    
+    try:
+        file_path.unlink()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete script: {str(e)}")
+    
+    return ApiResponse(data={"deleted": filename})
+
+

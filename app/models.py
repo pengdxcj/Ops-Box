@@ -62,7 +62,7 @@ class AssetCloudServer(Base):
     os: Mapped[str] = mapped_column(String(64), nullable=False)
     private_ip: Mapped[str] = mapped_column(String(64), nullable=False)
     public_ip: Mapped[str] = mapped_column(String(64), nullable=True)
-    expire_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expire_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     asset = relationship("Asset", back_populates="cloud_server")
 
@@ -108,7 +108,7 @@ class AssetSecurityProduct(Base):
     version: Mapped[str] = mapped_column(String(32), nullable=False)
     deploy_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     coverage_scope: Mapped[str] = mapped_column(Text, nullable=False)
-    license_expire: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    license_expire: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     asset = relationship("Asset", back_populates="security_product")
 
@@ -150,3 +150,63 @@ class AssetChangeLog(Base):
     operator: Mapped[str] = mapped_column(String(64), nullable=False, default="system")
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
+
+class EsCluster(Base):
+    __tablename__ = "es_cluster"
+    __table_args__ = (UniqueConstraint("name", name="uk_es_cluster_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(256), nullable=False)
+    username: Mapped[str] = mapped_column(String(128), nullable=True)
+    password: Mapped[str] = mapped_column(String(128), nullable=True)
+    snapshot_repo: Mapped[str] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+
+class EsSnapshotTask(Base):
+    __tablename__ = "es_snapshot_task"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cluster_id: Mapped[int] = mapped_column(ForeignKey("es_cluster.id"), nullable=False, index=True)
+    index_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    snapshot_name: Mapped[str] = mapped_column(String(256), nullable=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING", index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    retry_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    last_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, nullable=True)
+    result_json: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    cluster = relationship("EsCluster")
+    logs = relationship("EsSnapshotTaskLog", back_populates="task", cascade="all, delete-orphan")
+
+
+class EsSnapshotTaskLog(Base):
+    __tablename__ = "es_snapshot_task_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("es_snapshot_task.id"), nullable=False, index=True)
+    task_created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    index_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    snapshot_name: Mapped[str] = mapped_column(String(256), nullable=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    result_json: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    task = relationship("EsSnapshotTask", back_populates="logs")

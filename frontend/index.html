@@ -17,6 +17,24 @@
     <div class="bg-shape bg-shape-b"></div>
 
     <main class="layout">
+
+      
+      
+      <section class="view-switch card">
+        <div>
+          <p class="eyebrow">&#25511;&#21046;&#21488;&#23548;&#33322;</p>
+          <h2>&#39029;&#38754;&#20999;&#25442;</h2>
+        </div>
+        <div class="switch-actions">
+          <button id="navCmdb" class="btn btn-pill active" type="button">CMDB</button>
+          <button id="navEs" class="btn btn-pill btn-ghost" type="button">Elasticsearch</button>
+          <button id="navPython" class="btn btn-pill btn-ghost" type="button">Python脚本</button>
+        </div>
+      </section>
+
+
+      <section id="cmdbView" class="view view-active">
+
       <header class="hero card">
         <div>
           <p class="eyebrow">&#36164;&#20135;&#36816;&#32500;&#25511;&#21046;&#21488;</p>
@@ -42,16 +60,7 @@
 
           <div class="filter-bar">
             <div class="filters">
-              <label>
-                &#31867;&#22411;
-                <select id="filterType">
-                  <option value="">&#20840;&#37096;</option>
-                  <option value="CLOUD_SERVER">CLOUD_SERVER</option>
-                  <option value="DB">DB</option>
-                  <option value="MIDDLEWARE">MIDDLEWARE</option>
-                  <option value="SECURITY_PRODUCT">SECURITY_PRODUCT</option>
-                </select>
-              </label>
+
               <label>
                 &#29615;&#22659;
                 <select id="filterEnv">
@@ -79,7 +88,7 @@
             </div>
 
             <div class="table-actions">
-              <button id="templateBtn" class="btn btn-ghost">下载模板</button>
+              <button id="templateBtn" class="btn btn-ghost">&#19979;&#36733;&#27169;&#26495;</button>
               <button id="exportBtn" class="btn btn-ghost">&#23548;&#20986; CSV</button>
               <button id="importBtn" class="btn">&#23548;&#20837; CSV</button>
               <input id="importFile" type="file" accept=".csv" hidden />
@@ -179,9 +188,314 @@
         </div>
         <div id="changeLogList" class="stack"></div>
       </section>
+
+      </section>
+
+      
+      
+      <section id="esView" class="view">
+        <header class="es-hero">
+          <div>
+            <p class="eyebrow">Elasticsearch &#38598;&#32676;&#25511;&#21046;</p>
+            <h1>Elasticsearch &#38598;&#32676;&#31649;&#29702;</h1>
+            <p class="subtitle">&#32479;&#19968;&#31649;&#29702;&#38598;&#32676;&#36830;&#25509;&#12289;&#20581;&#24247;&#29366;&#24577;&#12289;&#32034;&#24341;&#19982;&#24555;&#29031;&#20219;&#21153;&#12290;</p>
+          </div>
+          <div class="hero-actions">
+            <button id="esRefreshBtn" class="btn" type="button">&#21047;&#26032;&#29366;&#24577;</button>
+          </div>
+        </header>
+
+        <section class="es-card es-connection">
+          <div class="es-connection-head">
+            <div>
+              <h2>&#38598;&#32676;&#36830;&#25509;&#31649;&#29702;</h2>
+              <p id="esConnectionHint">&#35831;&#36873;&#25321;&#36830;&#25509;&#30446;&#26631;&#25110;&#26032;&#24314;&#38598;&#32676;&#37197;&#32622;&#12290;</p>
+            </div>
+            <div class="es-connection-actions">
+              <select id="esClusterSelect" class="es-input"></select>
+              <button id="esTestBtn" class="btn btn-ghost" type="button">&#36830;&#25509;&#27979;&#35797;</button>
+              <button id="esNewBtn" class="btn" type="button">&#26032;&#24314;&#36830;&#25509;</button>
+            </div>
+          </div>
+          <form id="esCreateForm" class="es-form hidden">
+            <div class="full es-form-head">
+              <h3 id="esFormTitle">&#26032;&#24314;&#36830;&#25509;</h3>
+              <p id="esFormHint" class="muted">&#22635;&#20889;&#36830;&#25509;&#20449;&#24687;&#21518;&#21487;&#36827;&#34892;&#27979;&#35797;&#19982;&#20445;&#23384;&#12290;</p>
+            </div>
+            <label>
+              &#38598;&#32676;&#21517;&#31216;
+              <input name="name" required placeholder="prod-search" />
+            </label>
+            <label>
+              &#35775;&#38382;&#22320;&#22336;
+              <input name="base_url" required placeholder="http://127.0.0.1:9200" />
+            </label>
+            <label>
+              &#29992;&#25143;&#21517;
+              <input name="username" placeholder="elastic" />
+            </label>
+            <label>
+              &#23494;&#30721;
+              <input name="password" type="password" placeholder="******" />
+            </label>
+            <label class="full">
+              &#24555;&#29031;&#20179;&#24211;
+              <select id="esSnapshotRepoSelect" name="snapshot_repo" class="es-input"></select>
+              <span id="esSnapshotRepoHint" class="es-hint"></span>
+            </label>
+            <div class="full es-form-actions">
+              <button id="esFormSubmit" type="submit" class="btn">&#20445;&#23384;&#36830;&#25509;</button>
+              <button type="button" id="esCancelCreate" class="btn btn-ghost">&#21462;&#28040;</button>
+            </div>
+          </form>
+          <div class="es-cluster-list">
+            <div class="es-cluster-list-head">
+              <h3>&#24050;&#28155;&#21152;&#38598;&#32676;</h3>
+              <span id="esClusterCount" class="es-hint">0 &#20010;</span>
+            </div>
+            <div id="esClusterList" class="es-cluster-items"></div>
+          </div>
+        </section>
+
+        <section class="es-metrics">
+          <article class="es-card es-metric-card">
+            <div class="es-card-title">&#38598;&#32676;&#22522;&#26412;&#20449;&#24687;</div>
+            <div class="es-row">
+              <span class="es-label">&#38598;&#32676;&#21517;&#31216;</span>
+              <span id="esClusterName" class="es-text">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#38598;&#32676; UUID</span>
+              <span id="esClusterUuid" class="es-text">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#20581;&#24247;&#29366;&#24577;</span>
+              <span id="esHealthStatus" class="es-health"><span class="es-health-icon">&#10003;</span><span class="es-health-text">-</span></span>
+            </div>
+          </article>
+
+          <article class="es-card es-metric-card">
+            <div class="es-card-title">&#33410;&#28857;&#20449;&#24687;</div>
+            <div class="es-row">
+              <span class="es-label">&#33410;&#28857;&#24635;&#25968;</span>
+              <span id="esNodesTotal" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">Master &#33410;&#28857;</span>
+              <span id="esNodesMaster" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">Data &#33410;&#28857;</span>
+              <span id="esNodesData" class="es-number">-</span>
+            </div>
+          </article>
+
+          <article class="es-card es-metric-card">
+            <div class="es-card-title">&#20998;&#29255;&#20449;&#24687;</div>
+            <div class="es-row">
+              <span class="es-label">&#20998;&#29255;&#24635;&#25968;</span>
+              <span id="esShardsTotal" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#20027;&#20998;&#29255;&#25968;</span>
+              <span id="esShardsPrimary" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#21103;&#26412;&#20998;&#29255;&#25968;</span>
+              <span id="esShardsReplica" class="es-number">-</span>
+            </div>
+          </article>
+
+          <article class="es-card es-metric-card">
+            <div class="es-card-title">&#32034;&#24341;&#19982;&#25991;&#26723;&#20449;&#24687;</div>
+            <div class="es-row">
+              <span class="es-label">&#32034;&#24341;&#24635;&#25968;</span>
+              <span id="esIndicesTotal" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#25991;&#26723;&#24635;&#25968;</span>
+              <span id="esDocsTotal" class="es-number">-</span>
+            </div>
+            <div class="es-row">
+              <span class="es-label">&#30913;&#30424;&#21344;&#29992;</span>
+              <span id="esStoreSize" class="es-number">-</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="es-card es-snapshot">
+          <div class="es-snapshot-head">
+            <div>
+              <h2>&#32034;&#24341;&#24555;&#29031;&#31649;&#29702;</h2>
+              <p id="esSnapshotHint">&#20165;&#23637;&#31034;&#26410;&#22791;&#20221;&#32034;&#24341;</p>
+            </div>
+          </div>
+          <div class="es-snapshot-search">
+            <input id="esIndexSearch" class="es-input" placeholder="ailpha-baas-log" />
+            <button id="esSearchBtn" class="btn" type="button">&#26597;&#35810;&#26410;&#22791;&#20221;&#32034;&#24341;</button>
+          </div>
+          <div class="es-index-toolbar">
+            <div class="es-index-summary">
+              <span id="esIndexCountText" class="es-hint">--</span>
+              <span id="esIndexPageText" class="es-hint"></span>
+            </div>
+            <div class="es-index-controls">
+              <label class="es-page-size">
+                &#27599;&#39029;
+                <select id="esPageSize" class="es-input es-input-sm">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <div id="esPagination" class="es-pagination"></div>
+            </div>
+          </div>
+          <div id="esIndexList" class="es-index-list"></div>
+          <form id="esSnapshotForm" class="es-snapshot-form">
+            <label>
+              &#24050;&#36873;&#32034;&#24341;
+              <input id="esSelectedIndex" readonly />
+            </label>
+            <label>
+              &#22791;&#20221;&#21517;&#31216;
+              <input id="esSnapshotName" placeholder="snapshot_xxx" />
+            </label>
+            <button type="submit" class="btn">&#25191;&#34892;&#22791;&#20221;</button>
+          </form>
+
+        </section>
+
+        <section class="es-card es-schedule">
+          <div class="es-schedule-head">
+            <div>
+              <h2>定时快照任务</h2>
+              <p class="es-hint">设置并管理定时快照任务，支持任务状态跟踪</p>
+            </div>
+            <div class="es-schedule-actions">
+              <button id="esTaskRefreshBtn" class="btn btn-ghost btn-small" type="button">刷新列表</button>
+            </div>
+          </div>
+          <form id="esTaskForm" class="es-task-form">
+            <label>
+              目标索引
+              <input id="esTaskIndex" class="es-input" placeholder="order-logs-2026.03.17" required />
+            </label>
+            <label>
+              执行时间
+              <input id="esTaskTime" class="es-input" type="datetime-local" required />
+            </label>
+            <label>
+              快照名称
+              <input id="esTaskSnapshotName" class="es-input" placeholder="snapshot_orders_20260317" />
+            </label>
+            <label>
+              失败重试
+              <select id="esTaskMaxRetries" class="es-input">
+                <option value="0">0 次</option>
+                <option value="1">1 次</option>
+                <option value="2" selected>2 次</option>
+                <option value="3">3 次</option>
+              </select>
+            </label>
+            <label>
+              重试间隔
+              <select id="esTaskRetryInterval" class="es-input">
+                <option value="1">1 分钟</option>
+                <option value="2" selected>2 分钟</option>
+                <option value="5">5 分钟</option>
+                <option value="10">10 分钟</option>
+              </select>
+            </label>
+            <div class="es-task-actions">
+              <button id="esTaskSubmitBtn" type="submit" class="btn">创建任务</button>
+              <button id="esTaskCancelEdit" type="button" class="btn btn-ghost btn-small hidden">取消编辑</button>
+              <button id="esTaskUseSelected" type="button" class="btn btn-ghost btn-small">使用选中索引</button>
+            </div>
+          </form>
+          <div class="es-task-toolbar">
+            <span id="esTaskCount" class="es-hint">--</span>
+            <div id="esTaskPagination" class="es-pagination"></div>
+          </div>
+          <div id="esTaskTable" class="es-task-table"></div>
+        </section>
+      </section>
+
+      <section id="pythonView" class="view">
+        <header class="hero card">
+          <div>
+            <p class="eyebrow">Python脚本管理</p>
+            <h1>Python脚本管理</h1>
+            <p class="subtitle">
+              管理和执行Python脚本，支持脚本的创建、编辑、执行和结果查看。
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button id="pythonRefreshBtn" class="btn">刷新列表</button>
+            <button id="pythonImportBtn" class="btn btn-ghost">导入脚本</button>
+            <input type="file" id="pythonImportFile" accept=".py" hidden />
+          </div>
+        </header>
+
+        <section class="grid-two">
+          <article class="card panel">
+            <div class="panel-head">
+              <h2>脚本列表</h2>
+              <p>管理和执行Python脚本</p>
+            </div>
+            <div id="pythonScriptList" class="stack"></div>
+          </article>
+
+          <article class="card panel">
+            <div class="panel-head">
+              <h2 id="pythonEditorTitle">脚本编辑器</h2>
+              <p>创建或编辑Python脚本</p>
+            </div>
+            <form id="pythonScriptForm" class="form-grid">
+              <input type="hidden" id="pythonScriptId" name="id" value="" />
+              <label>
+                脚本名称
+                <input id="pythonScriptName" name="name" required placeholder="script_name.py" />
+              </label>
+              <label>
+                脚本描述
+                <input id="pythonScriptDescription" name="description" placeholder="脚本功能描述" />
+              </label>
+              <label class="full">
+                脚本内容
+                <textarea id="pythonScriptContent" name="content" rows="15" required placeholder="# 请输入Python脚本代码"></textarea>
+              </label>
+              <div class="full">
+                <button type="submit" class="btn">保存脚本</button>
+                <button type="button" id="pythonCancelEdit" class="btn btn-ghost">取消</button>
+              </div>
+            </form>
+            <div id="pythonScriptResult" class="hidden">
+              <h3>执行结果</h3>
+              <pre id="pythonResultContent"></pre>
+            </div>
+          </article>
+        </section>
+      </section>
+
+
     </main>
+
+        <div id="esModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-modal-close="true"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="esModalTitle">
+        <div class="modal-header">
+          <h3 id="esModalTitle">&#25552;&#31034;</h3>
+          <button type="button" class="btn btn-ghost btn-small" data-modal-close="true">&#20851;&#38381;</button>
+        </div>
+        <div id="esModalBody" class="modal-body"></div>
+        <div id="esModalActions" class="modal-actions"></div>
+      </div>
+    </div>
 
     <div id="toast" class="toast"></div>
     <script src="/static/app.js"></script>
   </body>
 </html>
+
+
